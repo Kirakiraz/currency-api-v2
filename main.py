@@ -101,18 +101,30 @@ def load_to_raw(payload: list, engine) -> int:
 def transform_to_staging(engine) -> None:
     STAGING_SQL = """
     INSERT INTO staging.stg_exchange_rate
-        (source_date, base_currency, target_currency, rate)
-    SELECT DISTINCT
-        (elem->>'date')::DATE              AS source_date,
-        (elem->>'base')::CHAR(3)           AS base_currency,
-        (elem->>'quote')::CHAR(3)          AS target_currency,
-        (elem->>'rate')::NUMERIC(12,6)     AS rate
-    FROM raw.api_response,
-        jsonb_array_elements(payload) AS elem
-    WHERE elem->>'rate' IS NOT NULL
+    (source_date, base_currency, target_currency, rate)
+    SELECT
+        source_date, base_currency, target_currency, rate
+    FROM (
+        SELECT
+            (elem->>'date')::DATE              AS source_date,
+            (elem->>'base')::CHAR(3)           AS base_currency,
+            (elem->>'quote')::CHAR(3)          AS target_currency,
+            (elem->>'rate')::NUMERIC(12,6)     AS rate,
+            ROW_NUMBER() OVER (
+                PARTITION BY 
+                    (elem->>'date')::DATE,
+                    (elem->>'base'),
+                    (elem->>'quote')
+                ORDER BY r.fetched_at DESC
+            ) AS rn
+        FROM raw.api_response r,
+            jsonb_array_elements(r.payload) AS elem
+        WHERE elem->>'rate' IS NOT NULL
+    ) ranked
+    WHERE rn = 1
     ON CONFLICT (source_date, base_currency, target_currency)
     DO UPDATE SET
-        rate = EXCLUDED.rate,
+        rate      = EXCLUDED.rate,
         loaded_at = NOW();
     """
     with engine.connect() as conn:
