@@ -37,9 +37,13 @@ def main():
     engine = create_engine(DB_URL)
 
     try:
-        payload = fetch_fx_data()
+        start_date = get_last_loaded_date(engine)
+        logger.info(f"Last loaded date found in DB: {start_date}")
+
+        payload = fetch_fx_data(start_date)
         load_to_raw(payload, engine)
         logger.info("✓ Raw load done")
+
         transform_to_staging(engine)
         logger.info("✓ Staging complete")
     except Exception as e:
@@ -49,17 +53,38 @@ def main():
         engine.dispose()
 
 # ============================================================
-# Extract: ยิง API → return JSON ดิบ
+# Fetch latest date from staging.stg_exchange_rate
 # ============================================================
 
 
-def fetch_fx_data() -> list:
+def get_last_loaded_date(engine) -> str:
+    query = text("SELECT MAX(source_date) FROM staging.stg_exchange_rate")
+
+    with engine.connect() as conn:
+        result = conn.execute(query)
+        last_date = result.scalar()
+
+    # Check if last_date is null
+    if last_date:
+        return last_date.strftime("%Y-%m-%d")
+
+    # Is null. set last_date to "2024-01-01"
+    return "2024-01-01"
+
+# ============================================================
+# Extract: API → return raw JSON
+# ============================================================
+
+
+def fetch_fx_data(start_date: str) -> list:
     url = f"{API_BASE}/rates"
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
     params = {
         "base": "USD",
         "quotes": "THB,JPY,EUR,GBP,SGD",
-        "from": "2024-01-01",
-        "to": "2024-01-31",
+        "from": start_date,
+        "to": current_date,
         "providers": "ECB",
     }
 
@@ -71,13 +96,14 @@ def fetch_fx_data() -> list:
     logger.info(f"Got {len(payload)} records")
     return payload
 
+# ============================================================
+# Load: INSERT JSON into raw.api_response
+# ============================================================
 
-# ============================================================
-# Load: INSERT JSON ดิบเข้า raw.api_response
-# ============================================================
+
 def load_to_raw(payload: list, engine) -> int:
     query = text("""
-        INSERT INTO raw.api_response (source, payload)
+        insert INTO raw.api_response (source, payload)
         VALUES (:source, CAST(:payload AS JSONB))
         RETURNING id
     """)
@@ -94,39 +120,14 @@ def load_to_raw(payload: list, engine) -> int:
     return new_id
 
 # ============================================================
-# Load: INSERT JSON ดิบเข้า raw.api_response
+# Load: Unnest payload into staging.stg_exchange_rate
 # ============================================================
 
 
 def transform_to_staging(engine) -> None:
-    STAGING_SQL = """
-    INSERT INTO staging.stg_exchange_rate
-    (source_date, base_currency, target_currency, rate)
-    SELECT
-        source_date, base_currency, target_currency, rate
-    FROM (
-        SELECT
-            (elem->>'date')::DATE              AS source_date,
-            (elem->>'base')::CHAR(3)           AS base_currency,
-            (elem->>'quote')::CHAR(3)          AS target_currency,
-            (elem->>'rate')::NUMERIC(12,6)     AS rate,
-            ROW_NUMBER() OVER (
-                PARTITION BY 
-                    (elem->>'date')::DATE,
-                    (elem->>'base'),
-                    (elem->>'quote')
-                ORDER BY r.fetched_at DESC
-            ) AS rn
-        FROM raw.api_response r,
-            jsonb_array_elements(r.payload) AS elem
-        WHERE elem->>'rate' IS NOT NULL
-    ) ranked
-    WHERE rn = 1
-    ON CONFLICT (source_date, base_currency, target_currency)
-    DO UPDATE SET
-        rate      = EXCLUDED.rate,
-        loaded_at = NOW();
-    """
+    with open("transform_staging.sql", "r", encoding="utf-8") as f:
+        STAGING_SQL = f.read()
+
     with engine.connect() as conn:
         result = conn.execute(text(STAGING_SQL))
         conn.commit()
