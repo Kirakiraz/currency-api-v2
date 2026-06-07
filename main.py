@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+from pathlib import Path
 from datetime import datetime
 
 import requests
@@ -27,6 +28,7 @@ DB_URL = (
 
 API_BASE = "https://api.frankfurter.dev/v2"
 SOURCE_NAME = "frankfurter"
+SQL_DIR = Path(__file__).parent
 
 # ============================================================
 # Main
@@ -125,7 +127,7 @@ def load_to_raw(payload: list, engine) -> int:
 
 
 def transform_to_staging(engine) -> None:
-    with open("transform_staging.sql", "r", encoding="utf-8") as f:
+    with open(SQL_DIR / "transform_staging.sql", "r", encoding="utf-8") as f:
         STAGING_SQL = f.read()
 
     with engine.connect() as conn:
