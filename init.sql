@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS mart.fx_daily (
     prev_rate NUMERIC(12, 6),
     daily_change_pct NUMERIC(8, 4),
     ma_7d NUMERIC(12, 6),
-    ma_30d NUMERIC(12, 6)
+    ma_30d NUMERIC(12, 6),
     volatility_30d NUMERIC(12, 6),
     refreshed_at TIMESTAMP NOT NULL DEFAULT NOW(),
     PRIMARY KEY (source_date, base_currency, target_currency)
