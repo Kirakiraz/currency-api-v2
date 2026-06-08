@@ -28,7 +28,7 @@ DB_URL = (
 
 API_BASE = "https://api.frankfurter.dev/v2"
 SOURCE_NAME = "frankfurter"
-SQL_DIR = Path(__file__).parent
+SQL_DIR = Path(__file__).parent / "sql"
 
 # ============================================================
 # Main
@@ -58,7 +58,7 @@ def main():
         engine.dispose()
 
 # ============================================================
-# Fetch latest date from staging.stg_exchange_rate
+# Get latest date from staging.stg_exchange_rate
 # ============================================================
 
 
