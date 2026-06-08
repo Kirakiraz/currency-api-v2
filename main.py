@@ -48,6 +48,9 @@ def main():
 
         transform_to_staging(engine)
         logger.info("✓ Staging complete")
+
+        transform_to_mart(engine)
+        logger.info("✓ Mart upsert complete")
     except Exception as e:
         logger.error(f"Error: {e}")
         sys.exit(1)
@@ -122,7 +125,7 @@ def load_to_raw(payload: list, engine) -> int:
     return new_id
 
 # ============================================================
-# Load: Unnest payload into staging.stg_exchange_rate
+# Transform: Unnest payload into staging.stg_exchange_rate
 # ============================================================
 
 
@@ -134,6 +137,20 @@ def transform_to_staging(engine) -> None:
         result = conn.execute(text(STAGING_SQL))
         conn.commit()
     logger.info(f"Staging upsert done ({result.rowcount} rows affected)")
+
+# ============================================================
+# Transform: Upsert data from staging.stg_exchange_rate to mart.fx_daily
+# ============================================================
+
+
+def transform_to_mart(engine) -> None:
+    with open(SQL_DIR/"transform_mart.sql", "r", encoding="utf8") as f:
+        MART_SQL = f.read()
+
+    with engine.connect() as conn:
+        result = conn.execute(text(MART_SQL))
+        conn.commit()
+    logger.info(f"Mart upsert done ({result.rowcount} rows affected)")
 
 
 if __name__ == "__main__":
