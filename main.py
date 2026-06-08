@@ -63,17 +63,18 @@ def main():
 
 
 def get_last_loaded_date(engine) -> str:
+    """Return last loaded date for incremental fetch, or backfill date if empty."""
+
     query = text("SELECT MAX(source_date) FROM staging.stg_exchange_rate")
 
     with engine.connect() as conn:
         result = conn.execute(query)
         last_date = result.scalar()
 
-    # Check if last_date is null
     if last_date:
         return last_date.strftime("%Y-%m-%d")
 
-    # Is null. set last_date to "2024-01-01"
+    # First run: table empty → backfill from project's chosen start date
     return "2024-01-01"
 
 # ============================================================
@@ -122,7 +123,7 @@ def load_to_raw(payload: list, engine) -> int:
         conn.commit()
 
     logger.info(f"Inserted into raw.api_response (id={new_id})")
-    return new_id
+    return new_id  # used by incremental staging transform (planned)
 
 # ============================================================
 # Transform: Unnest payload into staging.stg_exchange_rate
