@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
@@ -82,7 +83,7 @@ def get_last_loaded_date(engine) -> str:
 # ============================================================
 
 
-def fetch_fx_data(start_date: str) -> list:
+def fetch_fx_data(start_date: str) -> list[dict[str, any]]:
     url = f"{API_BASE}/rates"
     current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -107,7 +108,7 @@ def fetch_fx_data(start_date: str) -> list:
 # ============================================================
 
 
-def load_to_raw(payload: list, engine) -> int:
+def load_to_raw(payload: list[dict[str, any]], engine) -> int:
     query = text("""
         insert INTO raw.api_response (source, payload)
         VALUES (:source, CAST(:payload AS JSONB))
