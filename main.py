@@ -132,7 +132,7 @@ def load_to_raw(payload: list[dict[str, any]], engine) -> int:
 
 
 def transform_to_staging(engine) -> None:
-    with open(SQL_DIR / "transform_staging.sql", "r", encoding="utf-8") as f:
+    with open(SQL_DIR / "transform" / "stg_exchange_rate.sql", "r", encoding="utf-8") as f:
         STAGING_SQL = f.read()
 
     with engine.connect() as conn:
@@ -146,7 +146,7 @@ def transform_to_staging(engine) -> None:
 
 
 def transform_to_mart(engine) -> None:
-    with open(SQL_DIR/"transform_mart.sql", "r", encoding="utf8") as f:
+    with open(SQL_DIR / "transform" / "fx_daily.sql", "r", encoding="utf8") as f:
         MART_SQL = f.read()
 
     with engine.connect() as conn:
