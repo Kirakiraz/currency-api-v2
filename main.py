@@ -32,7 +32,7 @@ SOURCE_NAME = "frankfurter"
 SQL_DIR = Path(__file__).parent / "sql"
 
 # ============================================================
-# Main
+# Main: orchestrate the ELT flow
 # ============================================================
 
 
@@ -50,8 +50,12 @@ def main():
         transform_to_staging(engine)
         logger.info("✓ Staging complete")
 
-        transform_to_mart(engine)
-        logger.info("✓ Mart upsert complete")
+        transform_to_fx_daily(engine)
+        logger.info("✓ Mart: fx_daily (OBT) upsert complete")
+
+        transform_to_fact(engine)
+        logger.info("✓ Mart: fact_exchange_rate (star) upsert complete")
+
     except Exception as e:
         logger.error(f"Error: {e}")
         sys.exit(1)
@@ -59,7 +63,7 @@ def main():
         engine.dispose()
 
 # ============================================================
-# Get latest date from staging.stg_exchange_rate
+# Read latest loaded date for incremental fetch
 # ============================================================
 
 
@@ -83,7 +87,7 @@ def get_last_loaded_date(engine) -> str:
 # ============================================================
 
 
-def fetch_fx_data(start_date: str) -> list[dict[str, any]]:
+def fetch_fx_data(start_date: str) -> list[dict[str, Any]]:
     url = f"{API_BASE}/rates"
     current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -104,13 +108,13 @@ def fetch_fx_data(start_date: str) -> list[dict[str, any]]:
     return payload
 
 # ============================================================
-# Load: INSERT JSON into raw.api_response
+# Load: INSERT raw JSON payload into raw.api_response
 # ============================================================
 
 
-def load_to_raw(payload: list[dict[str, any]], engine) -> int:
+def load_to_raw(payload: list[dict[str, Any]], engine) -> int:
     query = text("""
-        insert INTO raw.api_response (source, payload)
+        INSERT INTO raw.api_response (source, payload)
         VALUES (:source, CAST(:payload AS JSONB))
         RETURNING id
     """)
@@ -124,35 +128,50 @@ def load_to_raw(payload: list[dict[str, any]], engine) -> int:
         conn.commit()
 
     logger.info(f"Inserted into raw.api_response (id={new_id})")
-    return new_id  # used by incremental staging transform (planned)
+    return new_id  # available for incremental staging transform (planned)
 
 # ============================================================
-# Transform: Unnest payload into staging.stg_exchange_rate
+# Transform: raw payload → staging.stg_exchange_rate (unnest + dedup)
 # ============================================================
 
 
 def transform_to_staging(engine) -> None:
     with open(SQL_DIR / "transform" / "stg_exchange_rate.sql", "r", encoding="utf-8") as f:
-        STAGING_SQL = f.read()
+        staging_sql = f.read()
 
     with engine.connect() as conn:
-        result = conn.execute(text(STAGING_SQL))
+        result = conn.execute(text(staging_sql))
         conn.commit()
-    logger.info(f"Staging upsert done ({result.rowcount} rows affected)")
+    logger.info(f"staging upsert done ({result.rowcount} rows affected)")
 
 # ============================================================
-# Transform: Upsert data from staging.stg_exchange_rate to mart.fx_daily
+# Transform: staging → mart.fx_daily (denormalized OBT, window-function metrics)
 # ============================================================
 
 
-def transform_to_mart(engine) -> None:
-    with open(SQL_DIR / "transform" / "fx_daily.sql", "r", encoding="utf8") as f:
-        MART_SQL = f.read()
+def transform_to_fx_daily(engine) -> None:
+    with open(SQL_DIR / "transform" / "fx_daily.sql", "r", encoding="utf-8") as f:
+        fx_daily_sql = f.read()
 
     with engine.connect() as conn:
-        result = conn.execute(text(MART_SQL))
+        result = conn.execute(text(fx_daily_sql))
         conn.commit()
-    logger.info(f"Mart upsert done ({result.rowcount} rows affected)")
+    logger.info(f"fx_daily upsert done ({result.rowcount} rows affected)")
+
+# ============================================================
+# Transform: staging → mart.fact_exchange_rate (star schema fact, raw rate only)
+# ============================================================
+
+
+def transform_to_fact(engine) -> None:
+    with open(SQL_DIR / "transform" / "fact_exchange_rate.sql", "r", encoding="utf-8") as f:
+        fact_sql = f.read()
+
+    with engine.connect() as conn:
+        result = conn.execute(text(fact_sql))
+        conn.commit()
+    logger.info(
+        f"fact_exchange_rate upsert done ({result.rowcount} rows affected)")
 
 
 if __name__ == "__main__":
